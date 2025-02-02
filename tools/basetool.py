@@ -1,11 +1,10 @@
 import os
 import logging
-import platform
-from typing import Annotated
 import subprocess
+from typing import Annotated
 from langchain_core.tools import tool
 from logger import setup_logger
-from load_cfg import WORKING_DIRECTORY,CONDA_PATH,CONDA_ENV
+from load_cfg import WORKING_DIRECTORY
 
 # Initialize logger
 logger = setup_logger()
@@ -15,39 +14,16 @@ if not os.path.exists(WORKING_DIRECTORY):
     os.makedirs(WORKING_DIRECTORY)
     logger.info(f"Created storage directory: {WORKING_DIRECTORY}")
 
-def get_platform_specific_command(command: str) -> tuple:
-    """
-    Get platform-specific command execution details.
-    Returns a tuple of (shell_command, shell_type, executable)
-    """
-    system = platform.system().lower()
-    if system == "windows":
-        # Windows-specific command
-        conda_commands = [
-            f"call {os.path.join(CONDA_PATH, 'Scripts', 'activate.bat')}",
-            f"conda activate {CONDA_ENV}",
-            command
-        ]
-        return (" && ".join(conda_commands), True, None)
-    else:
-        # Unix-like systems (Linux, macOS)
-        conda_commands = [
-            f"source {os.path.join(CONDA_PATH, 'etc/profile.d/conda.sh')}",
-            f"conda activate {CONDA_ENV}",
-            command
-        ]
-        return (" && ".join(conda_commands), True, "/bin/bash")
-
 @tool
 def execute_code(
     input_code: Annotated[str, "The Python code to execute."],
     codefile_name: Annotated[str, "The Python code file name or full path."] = 'code.py'
 ):
     """
-    Execute Python code in a specified conda environment and return the result.
+    Execute Python code and return the result.
 
-    This function takes Python code as input, writes it to a file, executes it in the specified
-    conda environment, and returns the output or any errors encountered during execution.
+    This function writes the given Python code to a file, executes it using the
+    system-installed Python interpreter, and returns the output or any errors encountered.
 
     Args:
     input_code (str): The Python code to be executed.
@@ -64,10 +40,7 @@ def execute_code(
         if os.path.isabs(codefile_name):
             code_file_path = codefile_name
         else:
-            if WORKING_DIRECTORY not in codefile_name:
-                code_file_path = os.path.join(WORKING_DIRECTORY, codefile_name)
-            else:
-                code_file_path = codefile_name
+            code_file_path = os.path.join(WORKING_DIRECTORY, codefile_name)
 
         # Normalize the path for the current platform
         code_file_path = os.path.normpath(code_file_path)
@@ -80,19 +53,15 @@ def execute_code(
         
         logger.info(f"Code has been written to file: {code_file_path}")
         
-        # Get platform-specific command
-        python_cmd = f"python {codefile_name}"
-        full_command, shell, executable = get_platform_specific_command(python_cmd)
+        # Execute the code using Python
+        command = f"python {code_file_path}"
+        logger.info(f"Executing command: {command}")
         
-        logger.info(f"Executing command: {full_command}")
-        
-        # Execute the code
         result = subprocess.run(
-            full_command,
-            shell=shell,
+            command,
+            shell=True,
             capture_output=True,
             text=True,
-            executable=executable,
             cwd=WORKING_DIRECTORY
         )
         
@@ -127,35 +96,30 @@ def execute_command(
     command: Annotated[str, "Command to be executed."]
 ) -> Annotated[str, "Output of the command."]:
     """
-    Execute a command in a specified Conda environment and return its output.
+    Execute a command and return its output.
 
-    This function activates a Conda environment, executes the given command,
-    and returns the output or any errors encountered during execution.
-    Please use pip to install the package.
+    This function runs the provided command in the default system shell and returns the output.
 
     Args:
-    command (str): The command to be executed in the Conda environment.
+    command (str): The command to be executed.
 
     Returns:
     str: The output of the command or an error message.
     """
     try:
-        # Get platform-specific command
-        full_command, shell, executable = get_platform_specific_command(command)
-        
         logger.info(f"Executing command: {command}")
         
         # Execute the command and capture the output
         result = subprocess.run(
-            full_command,
-            shell=shell,
+            command,
+            shell=True,
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            executable=executable,
             cwd=WORKING_DIRECTORY
         )
+        
         logger.info("Command executed successfully")
         return result.stdout
     except subprocess.CalledProcessError as e:
